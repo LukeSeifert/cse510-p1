@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 # pc_type: https://w3.pppl.gov/m3d/petsc-dev/docs/manualpages/PC/PCType.html
     # pcmg: Multigrid preconditioning (optional settings https://w3.pppl.gov/m3d/petsc-dev/docs/manualpages/PC/PCMG.html)
         # Full/default types https://w3.pppl.gov/m3d/petsc-dev/docs/manualpages/PC/PCMGType.html
+        # There should be an option pc_mg_cycles which takes either v or w, meaning v, w, and f can be implemented currently.
 
 
 
