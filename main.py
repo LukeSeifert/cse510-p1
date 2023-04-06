@@ -203,7 +203,7 @@ if __name__ == '__main__':
     family = 'Lagrange' #CG
     degree_FEM = 1
     
-    mesh_list = np.arange(1, 8)
+    mesh_list = np.arange(1, 20) # 20 is a good value for speed and good results
 
     # Current setup uses 1e-7 constant rtol
 
