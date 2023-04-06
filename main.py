@@ -15,29 +15,62 @@ import matplotlib.pyplot as plt
 
 
 
-def run_solve(V, a, L, bcs, parameters):
+#def run_solve(V, a, L, bcs, parameters):
+#    u = Function(V)
+#    # https://www.firedrakeproject.org/firedrake.html?highlight=solve#firedrake.solving.solve
+#    solve(a == L, u, bcs=bcs, solver_parameters=parameters)
+#    return u
+
+def linear_var_solve(V, a, L, bcs, parameters):
     u = Function(V)
     # https://www.firedrakeproject.org/firedrake.html?highlight=solve#firedrake.solving.solve
-    solve(a == L, u, bcs=bcs, solver_parameters=parameters)
-    return u
+    # https://www.firedrakeproject.org/firedrake.html?highlight=solve#firedrake.variational_solver.LinearVariationalProblem
+    vpb = LinearVariationalProblem(a, L, u, bcs=bcs)
+    solver = LinearVariationalSolver(vpb, solver_parameters=parameters)
+    solver.solve()
+    cells = u.function_space().mesh().num_cells() 
+    iterations = solver.snes.ksp.getIterationNumber()
+    return u, cells, iterations
 
-def error(u):
+def error(u, V, exact):
     expect = Function(V).interpolate(exact)
     return norm(assemble(u - expect))
 
-def compare_solvers(u, error, run_solve, **kwargs):
+def sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact):
     start = time.time()
-    u = run_solve(V, a, L, bcs, {"ksp_type": "preonly", "pc_type": "lu"})
+    u, cells, iters = linear_var_solve(V, a, L, bcs, parameters)
+    #u = run_solve(V, a, L, bcs, parameters)
     end = time.time()
-    print('Direct LU solve error ', error(u))
-    print(f'Took {end-start}s')
-   
-    start = time.time()
-    u = run_solve(V, a, L, bcs, {"ksp_type": "cg", "pc_type": "mg"})
-    end = time.time()
-    print('MG V-cycle PC + CG solver error', error(u))
-    print(f'Took {end-start}s')
+    net_time = end-start
+    err = error(u, V, exact)
+    print(f'{name} error ', err)
+    print(f'Cells: {cells}\nIterations: {iters}')
+    print(f'Took {net_time}s')
+    print('-'*10)
+    times[name] = net_time
+    iterations[name] = iters
+    errors[name] = err
+    cell_count[name] = cells
+    return times, iterations, errors, cell_count
 
+def compare_solvers(u, error, sub_solver, V, a, L, bcs, exact):
+    times = dict()
+    iterations = dict()
+    errors = dict()
+    cell_count = dict()
+    
+    print('-'*20)
+
+    name = 'LU Direct Solve'
+    parameters = {"ksp_type": "preonly", "pc_type": "lu"}
+    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
+
+    name = 'MG V-cycle PC + CG Solve'
+    parameters = {"ksp_type": "cg", "pc_type": "mg"}
+    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
+
+
+    name = 'MG F-cycle Solve'
     # The mg_levels_ksp_max_it is half of original depth?
     parameters = {
    "ksp_type": "preonly",
@@ -47,64 +80,130 @@ def compare_solvers(u, error, run_solve, **kwargs):
    "mg_levels_ksp_max_it": 2,
    "mg_levels_pc_type": "jacobi"
     }
+    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
-    start = time.time()
-    u = run_solve(V, a, L, bcs, parameters)
-    end = time.time()
-    print('MG F-cycle error', error(u))
-    print(f'Took {end-start}s')
-    return
+    return times, iterations, errors, cell_count
 
-def convergence():
+def convergence(compare_solvers, error, mesh_list, depth, family, degree_FEM):
+    full_time_dict = dict()
+    full_cell_dict = dict()
+    full_err_dict = dict()
+    full_iter_dict = dict()
+    for mindex, mesh in enumerate(mesh_list):
+        xmesh = mesh
+        ymesh = mesh
+        mesh = UnitSquareMesh(xmesh, ymesh)
+        hierarchy = MeshHierarchy(mesh, depth)
+
+
+        mesh = hierarchy[-1] # Grab the finest mesh
+        V = FunctionSpace(mesh, family, degree=degree_FEM)
+        u = TrialFunction(V)
+        v = TestFunction(V)
+        a = dot(grad(u), grad(v)) * dx
+        
+        bcs = DirichletBC(V, zero(), (1, 2, 3, 4))
+
+        # Forcing Function
+        x, y = SpatialCoordinate(mesh)
+        f = -0.5*pi*pi*(4*cos(pi*x) - 5*cos(pi*x*0.5) + 2)*sin(pi*y)
+        exact = sin(pi*x)*tan(pi*x*0.25)*sin(pi*y)
+        L = f * v * dx
+
+        times, iterations, errors, cell_count = compare_solvers(u, error, sub_solver, V=V, a=a, L=L, bcs=bcs, exact=exact)
+        for name in times.keys():
+            if mindex == 0:
+                full_time_dict[name] = [times[name]]
+                full_cell_dict[name] = [cell_count[name]]
+                full_err_dict[name] = [errors[name]]
+                full_iter_dict[name] = [iterations[name]]
+            else:
+                full_time_dict[name].append(times[name])
+                full_cell_dict[name].append(cell_count[name])
+                full_err_dict[name].append(errors[name])
+                full_iter_dict[name].append(iterations[name])
+    return full_time_dict, full_cell_dict, full_err_dict, full_iter_dict
+
+
+def subplotter(x, y, xlabel, ylabel):
+    savename = xlabel+ylabel
+    markers = ['.', '*', '^', 's', 'v']
+    marker_index = 0
+    for name in x.keys():
+        plt.plot(x[name], y[name], label=name, marker=markers[marker_index])
+        marker_index += 1
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f'images/{savename}.png')
+    plt.close()
+    return 
+
+
+def plot_gens(times, cells, errs, iters, subplotter):
+    print('Plotting')
+    # Go through each name and plot all together on same figure
+    # y time, x cells
+    x = cells
+    y = times
+    xlabel = 'Mesh Elements'
+    ylabel = 'Time [s]'
+    subplotter(x, y, xlabel, ylabel)
+    # y time, x iters
+    x = iters
+    y = times
+    xlabel = 'Iterations'
+    ylabel = 'Time [s]'
+    subplotter(x, y, xlabel, ylabel)
+    # y iters, x times
+    x = times
+    y = iters
+    xlabel = 'Time [s]'
+    ylabel = 'Iterations'
+    subplotter(x, y, xlabel, ylabel)
+    # y iters, x cells
+    x = cells
+    y = iters
+    xlabel = 'Mesh Elements'
+    ylabel = 'Iterations'
+    subplotter(x, y, xlabel, ylabel)
+    # y err, x times
+    x = times
+    y = errs
+    xlabel = 'Time [s]'
+    ylabel = 'Error'
+    subplotter(x, y, xlabel, ylabel)
+    # y err, x iters
+    x = cells
+    y = iters
+    xlabel = 'Mesh Elements'
+    ylabel = 'Iterations'
+    subplotter(x, y, xlabel, ylabel)
     return
 
 
 if __name__ == '__main__':
 
-
-
-    xmesh = 4
-    ymesh = 4
     depth = 1
     family = 'Lagrange' #CG
     degree_FEM = 1
-
-    print(f'n = {xmesh*ymesh*2}')
-
-    mesh = UnitSquareMesh(xmesh, ymesh)
-    hierarchy = MeshHierarchy(mesh, depth)
-
-
-#    fig, axes = plt.subplots()
-#    triplot(mesh, axes=axes)
-#    axes.legend();
-#    plt.savefig('check_mesh_coarse.png')
-#    plt.close()
-#    fig, axes = plt.subplots()
-#    triplot(hierarchy[-1], axes=axes)
-#    axes.legend();
-#    plt.savefig('check_mesh_fine.png')
-#    plt.close()
-
-    # Defining the Poisson equation problem
-    # d/dx^2 + d/dy^2 = f
-    mesh = hierarchy[-1] # Grab the finest mesh
-    V = FunctionSpace(mesh, family, degree=degree_FEM)
-    u = TrialFunction(V)
-    v = TestFunction(V)
-    a = dot(grad(u), grad(v)) * dx
     
-    bcs = DirichletBC(V, zero(), (1, 2, 3, 4))
+    mesh_list = [1, 2, 3]
 
-    # Forcing Function
-    x, y = SpatialCoordinate(mesh)
-    f = -0.5*pi*pi*(4*cos(pi*x) - 5*cos(pi*x*0.5) + 2)*sin(pi*y)
-    exact = sin(pi*x)*tan(pi*x*0.25)*sin(pi*y)
-    L = f * v * dx
+    # Current setup uses 1e-7 constant rtol
 
-    # Solving
-    # Conjugate Gradient preconditioned by geometric multigrid v-cycle
-    #solve_params = {'ksp_type': 'cg',
-    #                'pc_type' : 'mg'}
-    #u = run_solve(V, a, L, bcs, solve_params)
-    compare_solvers(u, error, run_solve, V=V, a=a, L=L, bcs=bcs)
+    times, cells, errs, iters = convergence(compare_solvers, error, mesh_list, depth, family, degree_FEM)
+    plot_gens(times, cells, errs, iters, subplotter)
+    
+
+##    fig, axes = plt.subplots()
+##    triplot(mesh, axes=axes)
+##    axes.legend();
+##    plt.savefig('check_mesh_coarse.png')
+##    plt.close()
+##    fig, axes = plt.subplots()
+##    triplot(hierarchy[-1], axes=axes)
+##    axes.legend();
+##    plt.savefig('check_mesh_fine.png')
+##    plt.close()
