@@ -2,6 +2,7 @@
 from firedrake import *
 import time
 import matplotlib.pyplot as plt
+import numpy as np
 
 # PETSc
 # Solve defaults {'ksp_rtol': 1e-07, 'ksp_type': 'preonly', 'mat_mumps_icntl_14': 200, 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps', 'pc_type': 'lu'}
@@ -202,7 +203,7 @@ if __name__ == '__main__':
     family = 'Lagrange' #CG
     degree_FEM = 1
     
-    mesh_list = [1, 2, 3, 4, 5]
+    mesh_list = np.arange(1, 8)
 
     # Current setup uses 1e-7 constant rtol
 
