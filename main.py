@@ -175,10 +175,16 @@ def plot_gens(times, cells, errs, iters, subplotter):
     ylabel = 'Error'
     subplotter(x, y, xlabel, ylabel)
     # y err, x iters
+    x = iters
+    y = errs
+    xlabel = 'Iterations'
+    ylabel = 'Error'
+    subplotter(x, y, xlabel, ylabel)
+    # y err, x cells
     x = cells
-    y = iters
+    y = errs
     xlabel = 'Mesh Elements'
-    ylabel = 'Iterations'
+    ylabel = 'Error'
     subplotter(x, y, xlabel, ylabel)
     return
 
