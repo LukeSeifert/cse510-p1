@@ -69,6 +69,13 @@ def compare_solvers(u, error, sub_solver, V, a, L, bcs, exact):
     parameters = {"ksp_type": "cg", "pc_type": "mg"}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
+    name = 'MG V-cycle Solve'
+    parameters = {"ksp_type": "preonly", "pc_type": "mg", 'pc_mg_cycles': 'v'}
+    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
+
+    name = 'MG W-cycle Solve'
+    parameters = {"ksp_type": "preonly", "pc_type": "mg", 'pc_mg_cycles': 'w'}
+    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
     name = 'MG F-cycle Solve'
     # The mg_levels_ksp_max_it is half of original depth?
@@ -191,11 +198,11 @@ def plot_gens(times, cells, errs, iters, subplotter):
 
 if __name__ == '__main__':
 
-    depth = 1
+    depth = 4
     family = 'Lagrange' #CG
     degree_FEM = 1
     
-    mesh_list = [1, 2, 3]
+    mesh_list = [1, 2, 3, 4, 5]
 
     # Current setup uses 1e-7 constant rtol
 
