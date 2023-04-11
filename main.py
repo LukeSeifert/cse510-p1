@@ -3,6 +3,7 @@ from firedrake import *
 import time
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 # PETSc
 # Solve defaults {'ksp_rtol': 1e-07, 'ksp_type': 'preonly', 'mat_mumps_icntl_14': 200, 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps', 'pc_type': 'lu'}
@@ -64,6 +65,10 @@ def compare_solvers(u, error, sub_solver, V, a, L, bcs, exact):
 
     name = 'LU Direct Solve'
     parameters = {"ksp_type": "preonly", "pc_type": "lu"}
+    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
+
+    name = 'CG Solve'
+    parameters = {"ksp_type": "cg", "pc_type": "none", 'mat_type': 'mat_free', 'ksp_monitor': None}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
     name = 'MG V-cycle PC + CG Solve'
@@ -133,23 +138,27 @@ def convergence(compare_solvers, error, mesh_list, depth, family, degree_FEM):
     return full_time_dict, full_cell_dict, full_err_dict, full_iter_dict
 
 
-def subplotter(x, y, xlabel, ylabel):
+def subplotter(x, y, xlabel, ylabel, image_dir):
     savename = xlabel+ylabel
     markers = ['.', '*', '^', 's', 'v']
     marker_index = 0
     for name in x.keys():
-        plt.plot(x[name], y[name], label=name, marker=markers[marker_index])
+        plt.plot(x[name], y[name], label=name, marker=markers[marker_index%len(markers)])
         marker_index += 1
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
+    if xlabel == 'Mesh Elements' or xlabel == 'Error':
+        plt.xscale('log')
+    if ylabel == 'Mesh Elements' or ylabel == 'Error':
+        plt.yscale('log')
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f'images/{savename}.png')
+    plt.savefig(f'{image_dir}/{savename}.png')
     plt.close()
     return 
 
 
-def plot_gens(times, cells, errs, iters, subplotter):
+def plot_gens(times, cells, errs, iters, subplotter, image_dir):
     print('Plotting')
     # Go through each name and plot all together on same figure
     # y time, x cells
@@ -157,58 +166,64 @@ def plot_gens(times, cells, errs, iters, subplotter):
     y = times
     xlabel = 'Mesh Elements'
     ylabel = 'Time [s]'
-    subplotter(x, y, xlabel, ylabel)
+    subplotter(x, y, xlabel, ylabel, image_dir)
     # y time, x iters
     x = iters
     y = times
     xlabel = 'Iterations'
     ylabel = 'Time [s]'
-    subplotter(x, y, xlabel, ylabel)
+    subplotter(x, y, xlabel, ylabel, image_dir)
     # y iters, x times
     x = times
     y = iters
     xlabel = 'Time [s]'
     ylabel = 'Iterations'
-    subplotter(x, y, xlabel, ylabel)
+    subplotter(x, y, xlabel, ylabel, image_dir)
     # y iters, x cells
     x = cells
     y = iters
     xlabel = 'Mesh Elements'
     ylabel = 'Iterations'
-    subplotter(x, y, xlabel, ylabel)
+    subplotter(x, y, xlabel, ylabel, image_dir)
     # y err, x times
     x = times
     y = errs
     xlabel = 'Time [s]'
     ylabel = 'Error'
-    subplotter(x, y, xlabel, ylabel)
+    subplotter(x, y, xlabel, ylabel, image_dir)
     # y err, x iters
     x = iters
     y = errs
     xlabel = 'Iterations'
     ylabel = 'Error'
-    subplotter(x, y, xlabel, ylabel)
+    subplotter(x, y, xlabel, ylabel, image_dir)
     # y err, x cells
     x = cells
     y = errs
     xlabel = 'Mesh Elements'
     ylabel = 'Error'
-    subplotter(x, y, xlabel, ylabel)
+    subplotter(x, y, xlabel, ylabel, image_dir)
     return
 
 
 if __name__ == '__main__':
-
+    initial_start = time.time()
     depth = 4
     family = 'Lagrange' #CG
     degree_FEM = 1
+    min_mesh = 1
+    max_mesh = 20
+    image_dir = f'./images-d{depth}-f{family}-r{degree_FEM}-m{max_mesh}'
+    if not os.path.exists(image_dir):
+        os.makedirs(image_dir)
     
-    mesh_list = np.arange(1, 20) # 20 is a good value for speed and good results
+    mesh_list = np.arange(min_mesh, max_mesh)
+    # 20 is a good value for speed and good results
 
     # Current setup uses 1e-7 constant rtol
 
     times, cells, errs, iters = convergence(compare_solvers, error, mesh_list, depth, family, degree_FEM)
-    plot_gens(times, cells, errs, iters, subplotter)
+    plot_gens(times, cells, errs, iters, subplotter, image_dir)
     
 
 ##    fig, axes = plt.subplots()
@@ -221,3 +236,6 @@ if __name__ == '__main__':
 ##    axes.legend();
 ##    plt.savefig('check_mesh_fine.png')
 ##    plt.close()
+
+    net_time = time.time() - initial_start
+    print(f'Total Time: {net_time}s')
