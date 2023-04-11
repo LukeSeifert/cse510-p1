@@ -85,6 +85,7 @@ def compare_solvers(u, error, sub_solver, V, a, L, bcs, exact):
     iterations = dict()
     errors = dict()
     cell_count = dict()
+    global CG_solvers
     
     print('-'*20)
 
@@ -103,46 +104,61 @@ def compare_solvers(u, error, sub_solver, V, a, L, bcs, exact):
     parameters = {"ksp_type": "preonly", "pc_type": "mg", 'pc_mg_cycles': 'v'}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
     
-    # RTOL
-    name = 'MG V-cycle PC + CG Solve'
-    parameters = {"ksp_type": "cg", "pc_type": "mg"}
-    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
+    if CG_solvers:
+        # RTOL
+        name = 'MG V-cycle PC + CG Solve'
+        parameters = {"ksp_type": "cg", "pc_type": "mg"}
+        times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
     
     # ITS
     name = 'MG W-cycle Solve'
     parameters = {"ksp_type": "preonly", "pc_type": "mg", 'pc_mg_cycles': 'w'}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
     
-    # RTOl
-    name = 'MG W-cycle PC + CG Solve'
-    parameters = {"ksp_type": "cg", "pc_type": "mg", 'pc_mg_cycles': 'w'}
-    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
+    if CG_solvers:
+        # RTOl
+        name = 'MG W-cycle PC + CG Solve'
+        parameters = {"ksp_type": "cg", "pc_type": "mg", 'pc_mg_cycles': 'w'}
+        times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
     # ITS
     name = 'MG F-cycle Solve'
     # The mg_levels_ksp_max_it is half of original depth?
+#    parameters = {
+#   "ksp_type": "preonly",
+#   "pc_type": "mg",
+#   "pc_mg_type": "full",
+#   "mg_levels_ksp_type": "chebyshev",
+#   "mg_levels_ksp_max_it": 2,
+#   "mg_levels_pc_type": "jacobi"
+#    }
     parameters = {
    "ksp_type": "preonly",
    "pc_type": "mg",
    "pc_mg_type": "full",
-   "mg_levels_ksp_type": "chebyshev",
-   "mg_levels_ksp_max_it": 2,
-   "mg_levels_pc_type": "jacobi"
+   "mg_levels_ksp_max_it": 1,
     }
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
-    # RTOL
-    name = 'MG F-cycle PC + CG Solve'
-    # The mg_levels_ksp_max_it is half of original depth?
-    parameters = {
-   "ksp_type": "cg",
-   "pc_type": "mg",
-   "pc_mg_type": "full",
-   "mg_levels_ksp_type": "chebyshev",
-   "mg_levels_ksp_max_it": 2,
-   "mg_levels_pc_type": "jacobi"
-    }
-    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
+    if CG_solvers:
+        # RTOL
+        name = 'MG F-cycle PC + CG Solve'
+        # The mg_levels_ksp_max_it is half of original depth?
+    #    parameters = {
+    #   "ksp_type": "cg",
+    #   "pc_type": "mg",
+    #   "pc_mg_type": "full",
+    #   "mg_levels_ksp_type": "chebyshev",
+    #   "mg_levels_ksp_max_it": 2,
+    #   "mg_levels_pc_type": "jacobi"
+    #    }
+        parameters = {
+       "ksp_type": "cg",
+       "pc_type": "mg",
+       "pc_mg_type": "full",
+       "mg_levels_ksp_max_it": 1,
+        }
+        times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
     return times, iterations, errors, cell_count
 
@@ -258,7 +274,8 @@ def plot_gens(times, cells, errs, iters, subplotter, image_dir):
 if __name__ == '__main__':
     initial_start = time.time()
     run_type = 'mg-nmg'
-    depth = 4
+    CG_solvers = False
+    depth = 1
     family = 'Lagrange' #CG
     degree_FEM = 1
     min_mesh = 1
@@ -267,7 +284,8 @@ if __name__ == '__main__':
     if not os.path.exists(image_dir):
         os.makedirs(image_dir)
     
-    mesh_list = np.arange(min_mesh, max_mesh)
+    #mesh_list = np.arange(min_mesh, max_mesh)
+    mesh_list = [1, 5, 10, 15, 20, 25, 30, 35, 40]
     # 20 is a good value for speed and good results
 
     # Current setup uses 1e-7 constant rtol
