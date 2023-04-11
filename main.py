@@ -1,5 +1,6 @@
 # Main run file
 from firedrake import *
+from firedrake.solving_utils import KSPReasons
 import time
 import matplotlib.pyplot as plt
 import numpy as np
@@ -40,13 +41,31 @@ def error(u, V, exact):
 
 def sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact):
     start = time.time()
+
+    #ksp_rtol = 0
+    #ksp_atol = 0
+    #ksp_max_it = 30
+    #parameters['ksp_rtol'] = ksp_rtol
+    #parameters['ksp_atol'] = ksp_atol
+    #parameters['ksp_max_it'] = ksp_max_it
+    
+
     u, cells, iters = linear_var_solve(V, a, L, bcs, parameters)
     #u = run_solve(V, a, L, bcs, parameters)
     end = time.time()
     net_time = end-start
     err = error(u, V, exact)
+
+
+    vpb = LinearVariationalProblem(a, L, u, bcs=bcs)
+    solver = LinearVariationalSolver(vpb, solver_parameters=parameters)
+    solver.solve()
+
     print(f'{name} error ', err)
     print(f'Cells: {cells}\nIterations: {iters}')
+    # CONVERGED_ITS means 1 iter of preconditioner applied
+    # https://w3.pppl.gov/m3d/petsc-dev/docs/manualpages/KSP/KSP_CONVERGED_ITS.html#KSP_CONVERGED_ITS
+    print(f'Reason: {KSPReasons[solver.snes.ksp.getConvergedReason()]}')
     print(f'Took {net_time}s')
     print('-'*10)
     times[name] = net_time
@@ -63,26 +82,32 @@ def compare_solvers(u, error, sub_solver, V, a, L, bcs, exact):
     
     print('-'*20)
 
+    # ITS
     name = 'LU Direct Solve'
     parameters = {"ksp_type": "preonly", "pc_type": "lu"}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
+    # RTOL
     name = 'CG Solve'
     parameters = {"ksp_type": "cg", "pc_type": "none", 'mat_type': 'mat_free', 'ksp_monitor': None}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
+    # ITS
     name = 'MG V-cycle PC + CG Solve'
     parameters = {"ksp_type": "cg", "pc_type": "mg"}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
+    # ITS
     name = 'MG V-cycle Solve'
     parameters = {"ksp_type": "preonly", "pc_type": "mg", 'pc_mg_cycles': 'v'}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
-
+    
+    # ITS
     name = 'MG W-cycle Solve'
     parameters = {"ksp_type": "preonly", "pc_type": "mg", 'pc_mg_cycles': 'w'}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
+    # ITS
     name = 'MG F-cycle Solve'
     # The mg_levels_ksp_max_it is half of original depth?
     parameters = {
@@ -211,7 +236,7 @@ if __name__ == '__main__':
     depth = 4
     family = 'Lagrange' #CG
     degree_FEM = 1
-    min_mesh = 1
+    min_mesh = 19
     max_mesh = 20
     image_dir = f'./images-d{depth}-f{family}-r{degree_FEM}-m{max_mesh}'
     if not os.path.exists(image_dir):
@@ -239,3 +264,4 @@ if __name__ == '__main__':
 
     net_time = time.time() - initial_start
     print(f'Total Time: {net_time}s')
+    print('MODIFIED SUB-SOLVER')
