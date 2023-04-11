@@ -93,19 +93,19 @@ def compare_solvers(u, error, sub_solver, V, a, L, bcs, exact):
     parameters = {"ksp_type": "preonly", "pc_type": "lu"}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
-    # RTOL
-    name = 'CG Solve'
-    parameters = {"ksp_type": "cg", "pc_type": "none", 'mat_type': 'mat_free', 'ksp_monitor': None}
-    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
-
-    # RTOL
-    name = 'MG V-cycle PC + CG Solve'
-    parameters = {"ksp_type": "cg", "pc_type": "mg"}
-    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
+    ## RTOL
+    #name = 'CG Solve'
+    #parameters = {"ksp_type": "cg", "pc_type": "none", 'mat_type': 'mat_free', 'ksp_monitor': None}
+    #times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
     # ITS
     name = 'MG V-cycle Solve'
     parameters = {"ksp_type": "preonly", "pc_type": "mg", 'pc_mg_cycles': 'v'}
+    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
+    
+    # RTOL
+    name = 'MG V-cycle PC + CG Solve'
+    parameters = {"ksp_type": "cg", "pc_type": "mg"}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
     
     # ITS
