@@ -141,11 +141,8 @@ class FiniteElementPoisson1D:
             rhs=self.rhs[self.end_index["left"]:self.end_index["right"]]
         )
 
-    def solve(self):
-        result = self.iter_solver.solve(
-            tol=self.kwargs.get("tol", 1e-3),
-            max_iter=self.kwargs.get("max_iter", 1e6)
-        )
+    def solve(self, tol: float = 1e-3, max_iter: int = 1e6):
+        result = self.iter_solver.solve(tol=tol, max_iter=max_iter)
         if self.basis_func_type == "linear":
             self.soln_field[self.end_index["left"]:self.end_index["right"]] = result
         else:
@@ -190,10 +187,8 @@ if __name__ == "__main__":
         basis_func_type="quadratic",
         solve_type="gauss-seidel",
         weight=0.8,
-        max_iter=1e5,
-        tol=1e-4,
     )
-    num_soln = cls.solve()
+    num_soln = cls.solve(tol=1e-4, max_iter=int(1e5))
     plt.plot(cls.domain_x, num_soln, label="fem")
     plt.plot(cls.domain_x, exact_soln(cls.domain_x), label="exact")
     plt.legend()
