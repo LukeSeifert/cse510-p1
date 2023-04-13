@@ -31,8 +31,12 @@ class IterativeLinSolve:
         self._initialize_solver()
 
         temp_rhs = kwargs.get("rhs", None)
+        temp_initial_x = kwargs.get("phi_init", None)
+
         if temp_rhs is not None:
             self.set_rhs(set_rhs=temp_rhs)
+        if temp_initial_x is not None:
+            self.set_initial_x(initial_x=temp_initial_x)
 
     def _initialize_solver(self):
         weight = self.kwargs.get("weight", 1.0)
