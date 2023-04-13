@@ -174,15 +174,15 @@ def superimposed_sine(x, modes: list[float]):
 
 if __name__ == "__main__":
     sine_modes = [1.0, 2.0, 4.5]
-    rhs_func = lambda x: superimposed_sine_amp(x, modes=sine_modes)
+    given_rhs_func = lambda x: superimposed_sine_amp(x, modes=sine_modes)
     exact_soln = lambda x: superimposed_sine(x, modes=sine_modes)
-    # rhs_func = lambda x: 8.0
+    # given_rhs_func = lambda x: 8.0
     # exact_soln = lambda x: 4.0 * x * (1 - x)
 
     cls = FiniteElementPoisson1D(
         num_element=128,
         domain_size=1.0,
-        rhs_func=rhs_func,
+        rhs_func=given_rhs_func,
         left_boundary_type="Dirichlet",
         left_boundary_value=0.0,
         right_boundary_type="Dirichlet",
