@@ -13,6 +13,7 @@ class Multigrid1DPoisson:
         ] = ("Dirichlet", "Dirichlet"),
         boundary_values: tuple[float, float] = (0.0, 0.0),
         weight: float = 1.0,
+        iter_per_level: int = 10,
         relative_tol: float = 1e-3,
         phi_init: Optional[np.ndarray] = None,
     ):
@@ -25,33 +26,34 @@ class Multigrid1DPoisson:
         self.boundary_conditions = boundary_conditions
         self.boundary_values = boundary_values
         self.weight = weight
+        self.iter_per_level = iter_per_level
         self.relative_tol = relative_tol
         self.num_iter = 0
         self._initialize_fields(phi_init)
 
-    def solve(self, threshold=0.25):
+    def solve(self):
         # Recursive multi-grid
         if self.levels > 1:
-            self._solve(level=0, threshold=threshold)
+            self._solve(level=0)
 
         # Post-smoothing
         self.num_iter = 0
-        self._smoothing_at_level(level=0, res_factor=1e-14, absolute=self.relative_tol)
+        self._smoothing_at_level(level=0, absolute=self.relative_tol, max_iter=1e6)
 
         return self.phi_container[0].copy()
 
-    def _solve(self, level, threshold):
+    def _solve(self, level):
         print(f"===== Now at level {level} =====")
         if level == self.levels - 1:
-            self._smoothing_at_level(level, res_factor=1e-14, absolute=self.relative_tol)
+            self._smoothing_at_level(level, absolute=self.relative_tol, max_iter=1e6)
             return
 
-        self._smoothing_at_level(level, res_factor=threshold)
+        self._smoothing_at_level(level, max_iter=self.iter_per_level)
         self._restriction(
-            fine_residual=self._compute_residual_array_at_level(level),
+            fine_residual=self._compute_residual_array_at_level(level) * 4,
             coarse_residual=self.rhs_container[level + 1],
         )
-        self._solve(level=level + 1, threshold=threshold)
+        self._solve(level=level + 1)
         self._prolongation(self.phi_container[level + 1], self.phi_container[level])
 
     def _compute_residual_array_at_level(self, level):
@@ -95,16 +97,18 @@ class Multigrid1DPoisson:
                 self._generate_coarse_grid(self.rhs_container[lvl])
             )
 
-    def _smoothing_at_level(self, level, res_factor, absolute=-1.0):
+    def _smoothing_at_level(self, level, max_iter, absolute=-1.0):
         initial_res = self._compute_residual_at_level(level)
         res = initial_res
-        scale = np.amax(np.abs(self.rhs_container[level]))
-        while res > absolute * scale and res > res_factor * initial_res:
+        scale = absolute * np.amax(np.abs(self.rhs_container[level]))
+        num_iter = 0
+        while num_iter < max_iter and res > scale:
             self._do_step_jacobi(
                 phi=self.phi_container[level],
                 rhs=self.rhs_container[level],
             )
             res = self._compute_residual_at_level(level)
+            num_iter += 1
 
     @staticmethod
     def _generate_coarse_grid(fine_grid: np.ndarray) -> np.ndarray:
@@ -129,19 +133,17 @@ class Multigrid1DPoisson:
 
 
 if __name__ == "__main__":
-    num_levels = 1
+    num_levels = 3
     x, dx = np.linspace(0.0, 1.0, 257, retstep=True)
-    # modes = [1, 2, 4, 8, 16]
-    # b = np.zeros_like(x)
-    # for k in modes:
-    #     b += (2 * np.pi * k) ** 2 * np.sin(2 * np.pi * k * x)
-    #
-    b = 4.0 * x * (1.0 - x)
+    modes = [1, 2, 4, 8]
+    b = np.zeros_like(x)
+    for k in modes:
+        b += (2 * np.pi * k) ** 2 * np.sin(2 * np.pi * k * x)
 
-    exact_soln = x / 3 * (x ** 3 - 2 * x ** 2 + 1)
+    exact_soln = np.zeros_like(x)
 
-    # for k in modes:
-    #     exact_soln += np.sin(2 * np.pi * k * x)
+    for k in modes:
+        exact_soln += np.sin(2 * np.pi * k * x)
 
     b_field = np.zeros_like(b)
     b_field[1:-1] = dx ** 2 * b[1:-1]
@@ -151,8 +153,9 @@ if __name__ == "__main__":
     solver = Multigrid1DPoisson(
         levels=num_levels,
         rhs_field=b_field,
+        iter_per_level=100
     )
-    result = solver.solve(threshold=0.3)
+    result = solver.solve()
     print(solver.num_iter)
 
     import matplotlib.pyplot as plt
