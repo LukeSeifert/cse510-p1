@@ -1,10 +1,12 @@
 import numpy as np
+import scipy.sparse as spp
+from scipy.sparse import linalg as sla
 
 
 class IterativeLinSolve:
     def __init__(
         self,
-        matrix: np.ndarray,
+        matrix: spp.csr_matrix,
         solve_type: str,
         **kwargs,
     ):
@@ -34,27 +36,34 @@ class IterativeLinSolve:
 
     def _initialize_solver(self):
         weight = self.kwargs.get("weight", 1.0)
-        self.scaling_mat = np.zeros_like(self.matrix)
 
         if self.solve_type == "w-jacobi":
             assert 0.0 < weight <= 1.0, ValueError(
                 "Jacobi weight must be between 0 and 1"
             )
 
-            self.scaling_mat[...] = np.diag(
-                weight / (np.diag(self.matrix) + self.eps)
+            self.scaling_mat = spp.spdiags(
+                data=weight / (self.matrix.diagonal() + self.eps),
+                diags=0,
+                m=self.matrix.shape,
+                format="csr",
             )
 
-        if self.solve_type == "gauss-seidel":
-            self.scaling_mat[...] = np.linalg.inv(np.tril(self.matrix))
+        elif self.solve_type == "gauss-seidel":
+            self.scaling_mat = sla.inv(spp.tril(self.matrix, k=0))
 
-        if self.solve_type == "sor":
+        else:
             assert 1.0 <= weight < 2.0, ValueError(
                 "SOR weight must be between 1 and 2"
             )
-            diagonal = np.diag(np.diag(self.matrix))
-            strict_lower_trig = np.tril(self.matrix) - diagonal
-            self.scaling_mat[...] = np.linalg.inv(diagonal / weight + strict_lower_trig)
+            diagonal = spp.spdiags(
+                data=weight / (self.matrix.diagonal() + self.eps),
+                diags=0,
+                m=self.matrix.shape,
+                format="csr",
+            )
+            strict_lower_trig = spp.tril(self.matrix, k=-1)
+            self.scaling_mat = sla.inv(diagonal / weight + strict_lower_trig)
 
     def solve(self, tol=1e-3, max_iter=1e6):
         """ Solve linear system Ax = f """
@@ -141,12 +150,12 @@ if __name__ == "__main__":
         offsets=[-1, 0, 1],
         shape=(n, n),
         format="csr",
-    ).toarray()
+    )
     a[0, 0] = 1.0
     a[1, 0] = 0.0
     a[-1, -1] = 1.0
     a[-1, -2] = 0.0
-    cls = IterativeLinSolve(matrix=a, solve_type="sor", rhs=rhs, weight=1.4)
+    cls = IterativeLinSolve(matrix=a, solve_type="w-jacobi", rhs=rhs, weight=0.9)
     result = cls.solve()
 
     import matplotlib.pyplot as plt

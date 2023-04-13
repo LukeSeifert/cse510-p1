@@ -101,7 +101,7 @@ class FiniteElementPoisson1D:
                     self.num_element + 1 - self.dirichlet_boundary_count,
                     self.num_element + 1 - self.dirichlet_boundary_count,
                 ),
-            ).toarray()
+            )
 
             if self.left_boundary_type == "Neumann":
                 self.stiffness_matrix[0, 0] = 1.0
@@ -121,21 +121,17 @@ class FiniteElementPoisson1D:
                     2 * self.num_element + 1,
                 )
             )
-            self.stiffness_matrix = np.zeros(
-                (
-                    2 * self.num_element + 1 - self.dirichlet_boundary_count,
-                    2 * self.num_element + 1 - self.dirichlet_boundary_count,
-                )
-            )
 
             # Assemble the stiffness matrix
             for i in range(self.num_element):
                 temp_stiffness_matrix[2 * i:2 * i + 3, 2 * i:2 * i + 3] += local_stiffness
 
-            self.stiffness_matrix[...] = temp_stiffness_matrix[
-                self.end_index["left"]:self.end_index["right"],
-                self.end_index["left"]:self.end_index["right"],
-            ]
+            self.stiffness_matrix = sp.sparse.csr_matrix(
+                temp_stiffness_matrix[
+                    self.end_index["left"]:self.end_index["right"],
+                    self.end_index["left"]:self.end_index["right"],
+                ]
+            )
 
     def _initialize_iterative_solver(self):
         self.iter_solver = IterativeLinSolve(
@@ -178,13 +174,13 @@ def superimposed_sine(x, modes: list[float]):
 
 if __name__ == "__main__":
     sine_modes = [1.0, 2.0, 4.5]
-    # rhs_func = lambda x: superimposed_sine_amp(x, modes=sine_modes)
-    # exact_soln = lambda x: superimposed_sine(x, modes=sine_modes)
-    rhs_func = lambda x: 8.0
-    exact_soln = lambda x: 4.0 * x * (1 - x)
+    rhs_func = lambda x: superimposed_sine_amp(x, modes=sine_modes)
+    exact_soln = lambda x: superimposed_sine(x, modes=sine_modes)
+    # rhs_func = lambda x: 8.0
+    # exact_soln = lambda x: 4.0 * x * (1 - x)
 
     cls = FiniteElementPoisson1D(
-        num_element=64,
+        num_element=128,
         domain_size=1.0,
         rhs_func=rhs_func,
         left_boundary_type="Dirichlet",
@@ -195,6 +191,7 @@ if __name__ == "__main__":
         solve_type="gauss-seidel",
         weight=0.8,
         max_iter=1e5,
+        tol=1e-4,
     )
     num_soln = cls.solve()
     plt.plot(cls.domain_x, num_soln, label="fem")
