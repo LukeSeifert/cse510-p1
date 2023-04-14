@@ -73,6 +73,7 @@ class FiniteElementPoisson1D:
 
     def _initialize_fields(self):
         self.num_iter = 0
+        self.flops = 0
         self.dirichlet_boundary_count = 0
         self.end_index = {"left": 0, "right": None}
 
@@ -108,6 +109,7 @@ class FiniteElementPoisson1D:
                     self.num_element + 1 - self.dirichlet_boundary_count,
                     self.num_element + 1 - self.dirichlet_boundary_count,
                 ),
+                format="csr",
             )
 
             if self.left_boundary_type == "Neumann":
@@ -143,16 +145,25 @@ class FiniteElementPoisson1D:
     def _initialize_iterative_solver(self):
         self._iter_solver = IterativeLinSolve(
             matrix=self.stiffness_matrix,
-            solve_type=self.kwargs.get("solve_type", "w-jacobi"),
-            weight=self.kwargs.get("weight", 1.0),
-            rhs=self.rhs_field[self.end_index["left"]:self.end_index["right"]]
+            rhs=self.rhs_field[self.end_index["left"]:self.end_index["right"]],
+            **self.kwargs
         )
 
     def solve(self, tol: float = 1e-3, max_iter: int = 1e6):
-        result, total_iter = self._iter_solver.solve(tol=tol, max_iter=max_iter)
-        self.num_iter += total_iter
+        result = self._iter_solver.solve(tol=tol, max_iter=max_iter)
+        self.num_iter += result["num_iter"]
+        self.flops += result["flops"]
 
-        self.soln_field[self.end_index["left"]:self.end_index["right"]] = result
+        self.soln_field[self.end_index["left"]:self.end_index["right"]] = result["soln"]
         self.res_field[self.end_index["left"]:self.end_index["right"]] = self._iter_solver.res.copy()
 
-        return self.soln_field
+        return {
+            "soln": self.soln_field.copy(),
+            "num_iter": self.num_iter,
+            "residual": result["residual"],
+            "flops": self.flops,
+        }
+
+    def update_soln_field(self, new_soln_field: np.ndarray):
+        self._iter_solver.reset_soln_field()
+        self._iter_solver.modify_soln_field(new_soln_field)

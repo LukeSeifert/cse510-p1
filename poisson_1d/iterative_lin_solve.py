@@ -7,11 +7,11 @@ class IterativeLinSolve:
     def __init__(
         self,
         matrix: spp.csr_matrix,
-        solve_type: str,
         **kwargs,
     ):
+        self.solve_type = kwargs.get("solve_type", "w-jacobi")
         acceptable_solver_type = ("w-jacobi", "gauss-seidel", "sor")
-        assert solve_type.lower() in acceptable_solver_type, ValueError(
+        assert self.solve_type.lower() in acceptable_solver_type, ValueError(
             f"solver_type must be one of the followings: {acceptable_solver_type}"
         )
         assert matrix.shape[0] == matrix.shape[1], ValueError(
@@ -20,13 +20,15 @@ class IterativeLinSolve:
 
         self.matrix = matrix
         self.dim = matrix.shape[0]
-        self.solve_type = solve_type.lower()
         self.kwargs = kwargs
         self.eps = np.finfo(float).eps
 
         self.rhs = np.zeros(self.dim)
         self.soln = np.zeros(self.dim)
         self.res = np.zeros(self.dim)
+
+        self.verbose = kwargs.get("verbose", True)
+        self.save_res = kwargs.get("save_res", False)
 
         self._initialize_solver()
 
@@ -36,7 +38,7 @@ class IterativeLinSolve:
         if temp_rhs is not None:
             self.set_rhs(set_rhs=temp_rhs)
         if temp_initial_x is not None:
-            self.set_initial_x(initial_x=temp_initial_x)
+            self.modify_soln_field(set_soln=temp_initial_x)
 
     def _initialize_solver(self):
         weight = self.kwargs.get("weight", 1.0)
@@ -71,8 +73,13 @@ class IterativeLinSolve:
 
     def solve(self, tol=1e-3, max_iter=1e6):
         """ Solve linear system Ax = f """
-        print("===== Start iterative solve =====")
+        if self.verbose:
+            print("===== Start iterative solve =====")
+
         tol *= np.amax(np.abs(self.rhs))
+
+        res_history = []
+        iterations = []
         scalar_res = tol + 1.0
         num_iter = 0
 
@@ -80,12 +87,28 @@ class IterativeLinSolve:
             scalar_res = self.do_step()
             num_iter += 1
 
-        print(
-            f"Total number of iteration: {num_iter}\n"
-            f"Final residual: {scalar_res}\n"
-            "===== Iterative solve ends =====\n"
-        )
-        return self.soln.copy(), num_iter
+            if num_iter % 50 == 0 and self.save_res:
+                iterations.append(num_iter)
+                res_history.append(scalar_res)
+
+        if self.verbose:
+            print(
+                f"Total number of iteration: {num_iter}\n"
+                f"Final residual: {scalar_res}\n"
+                "===== Iterative solve ends =====\n"
+            )
+
+        if self.save_res:
+            filename = self.kwargs.get("res_file_name", "data/residuals.txt")
+            to_save = np.vstack((np.array(iterations), np.array(res_history))).T
+            np.savetxt(filename, to_save, delimiter=",")
+
+        return {
+            "soln": self.soln.copy(),
+            "num_iter": num_iter,
+            "residual": scalar_res,
+            "flops": num_iter * 4 * self.dim ** 2,
+        }
 
     def do_step(self):
         """
@@ -108,16 +131,19 @@ class IterativeLinSolve:
         """
         return np.sqrt(np.sum(self.res ** 2) / self.dim)
 
-    def set_initial_x(self, initial_x):
-        if type(initial_x) == np.ndarray:
-            assert self.soln.shape == initial_x.shape, ValueError(
+    def modify_soln_field(self, set_soln):
+        if type(set_soln) == np.ndarray:
+            assert self.soln.shape == set_soln.shape, ValueError(
                 "Incompatible array size"
             )
 
-        elif type(initial_x) != float:
+        elif type(set_soln) != float:
             raise ValueError("initial_x must be a scalar (float) or numpy array")
 
-        self.soln[...] = initial_x
+        self.soln[...] += set_soln
+
+    def reset_soln_field(self):
+        self.soln[...] *= 0.0
 
     def set_rhs(self, set_rhs):
         if type(set_rhs) == np.ndarray:

@@ -1,6 +1,9 @@
+import numpy as np
+import scipy.sparse as spp
 from typing import Literal, Callable
 
 from fem_poisson_1d import FiniteElementPoisson1D
+from iterative_lin_solve import IterativeLinSolve
 
 
 class MultigridFEMPoisson1D:
@@ -29,82 +32,158 @@ class MultigridFEMPoisson1D:
         self.left_bv, self.right_bv = boundary_values
         self.kwargs = kwargs
         self.num_iter = 0
-        self._initialize_fem_solvers()
+        self.flops = 0
 
-    def _initialize_fem_solvers(self):
-        self.fem_solvers = []
+        if self.basis_func_type == "linear":
+            self.grid_size = self.num_elements + 1
+        else:
+            self.grid_size = 2 * self.num_elements + 1
+        self._initialize_fem_solver()
+        self._initialize_restriction_prolongation_ops()
+        self._initialize_iterative_solvers()
+
+    def _initialize_fem_solver(self):
+        self.root_solver = FiniteElementPoisson1D(
+            num_element=self.num_elements,
+            domain_size=self.domain_size,
+            rhs_func=self.rhs_func,
+            left_boundary_type=self.left_bc,
+            left_boundary_value=self.left_bv,
+            right_boundary_type=self.right_bc,
+            right_boundary_value=self.right_bv,
+            basis_func_type=self.basis_func_type,
+            **self.kwargs,
+        )
+
+    def _initialize_iterative_solvers(self):
+        if self.multigrid_levels == 1:
+            return
+
+        left_index = 0 if self.left_bc == "Dirichlet" else 1
+        right_index = None if self.right_bc == "Dirichlet" else -1
+        original_mat = self.root_solver.stiffness_matrix[
+            left_index:right_index,
+            left_index:right_index,
+        ].copy()
+
+        self.iterative_solvers = []
+        self.subgrid_stiffness = []
+        curr_grid_size = self.grid_size - 2
+
         for i in range(self.multigrid_levels):
             if i == 0:
-                self.fem_solvers.append(
-                    FiniteElementPoisson1D(
-                        num_element=self.num_elements,
-                        domain_size=self.domain_size,
-                        rhs_func=self.rhs_func,
-                        left_boundary_type=self.left_bc,
-                        left_boundary_value=self.left_bv,
-                        right_boundary_type=self.right_bc,
-                        right_boundary_value=self.right_bv,
-                        basis_func_type=self.basis_func_type,
-                        **self.kwargs,
-                    )
-                )
-
+                self.subgrid_stiffness.append(original_mat)
+                self.iterative_solvers.append(self.root_solver)
             else:
-                self.fem_solvers.append(
-                    FiniteElementPoisson1D(
-                        num_element=self.num_elements // 2 ** i,
-                        domain_size=self.domain_size,
-                        rhs_func=self.rhs_func,
-                        basis_func_type=self.basis_func_type,
+                self.subgrid_stiffness.append(
+                    self.r_matrix[i - 1] @ self.subgrid_stiffness[i - 1] @ self.p_matrix[i - 1]
+                )
+                self.iterative_solvers.append(
+                    IterativeLinSolve(
+                        matrix=self.subgrid_stiffness[i],
                         **self.kwargs,
                     )
                 )
 
-        # Create an alias to the root solver
-        self.root_solver = self.fem_solvers[0]
+            curr_grid_size = (curr_grid_size - 1) // 2
 
-    def solve(self):
-        self._solve(level=0)
+    def solve(self, max_iter=100, tol=1e-5):
+        if self.multigrid_levels == 1:
+            result = self.root_solver.solve(max_iter=int(1e6), tol=tol)
+            self.num_iter += result["num_iter"]
+            self.flops += result["flops"]
 
-        # Post smoothing
-        self.root_solver.solve(tol=1e-4, max_iter=int(1e5))
+        else:
+            save_res = self.kwargs.get("save_res", False)
+            res_file_name = self.kwargs.get("res_file_name", "data/residual.txt")
+            iterations = []
+            residual_history = []
 
-        # Sum the numbers of iterations from each solver
-        for i in range(self.multigrid_levels):
-            self.num_iter += self.fem_solvers[i].num_iter
+            tol *= np.amax(np.abs(self.root_solver.rhs_field))
+            res = tol + 1.0
+
+            while res > tol:
+                if save_res:
+                    iterations.append(self.root_solver.num_iter)
+                    residual_history.append(res)
+                res = self._solve(level=0, max_iter=max_iter, tol=tol)
+
+            if save_res:
+                to_save = np.vstack((np.array(iterations), np.array(residual_history))).T
+                np.savetxt(res_file_name, to_save, delimiter=",")
 
         return self.root_solver.domain_x.copy(), self.root_solver.soln_field.copy()
 
-    def _solve(self, level):
+    def _solve(self, level, max_iter, tol):
         if level == self.multigrid_levels - 1:
-            self.fem_solvers[level].solve(tol=1e-4, max_iter=int(1e5))
-            return
+            result = self.iterative_solvers[level].solve(tol=tol, max_iter=int(1e6))
+            self.num_iter += result["num_iter"]
+            self.flops += result["flops"]
+            return result["residual"]
 
         # Pre-smoothing
-        self.fem_solvers[level].solve(max_iter=1000)
+        result = self.iterative_solvers[level].solve(max_iter=max_iter)
+        self.num_iter += result["num_iter"]
+        self.flops += result["flops"]
 
         # Restriction
-        self._restriction(
-            fine_residual=self.fem_solvers[level].res_field,
-            coarse_residual=self.fem_solvers[level + 1].rhs_field,
-        )
+        if level == 0:
+            self.iterative_solvers[level + 1].set_rhs(
+                (self.r_matrix[level] @ self.root_solver.res_field[1:-1])
+            )
+
+        else:
+            self.iterative_solvers[level + 1].set_rhs(
+                (self.r_matrix[level] @ self.iterative_solvers[level].res)
+            )
 
         # Recursive call
-        self._solve(level=level + 1)
+        self._solve(level=level + 1, max_iter=max_iter, tol=tol)
 
         # Prolongation
-        self._prolongation(
-            coarse_correction=self.fem_solvers[level + 1].soln_field,
-            fine_correction=self.fem_solvers[level].soln_field
-        )
+        if level == 0:
+            self.root_solver.soln_field[1:-1] += (
+                self.p_matrix[level] @ self.iterative_solvers[level + 1].soln
+            )
 
-    @staticmethod
-    def _restriction(fine_residual, coarse_residual) -> None:
-        coarse_residual[...] = fine_residual[::2]
+            self.root_solver.update_soln_field(
+                new_soln_field=self.root_solver.soln_field[
+                    self.root_solver.end_index["left"]:self.root_solver.end_index["right"]
+                ]
+            )
 
-    @staticmethod
-    def _prolongation(coarse_correction, fine_correction) -> None:
-        fine_correction[::2] += coarse_correction[...]
-        fine_correction[1::2] += 0.5 * (
-            coarse_correction[:-1] + coarse_correction[1:]
-        )
+        else:
+            self.iterative_solvers[level].modify_soln_field(
+                self.p_matrix[level] @ self.iterative_solvers[level + 1].soln
+            )
+
+        # Post-smoothing
+        result = self.iterative_solvers[level].solve(max_iter=max_iter // 2)
+        self.num_iter += result["num_iter"]
+        self.flops += result["flops"]
+
+        return result["residual"]
+
+    def _initialize_restriction_prolongation_ops(self):
+        self.r_matrix = []  # Restriction operators
+        self.p_matrix = []  # Prolongation operators
+
+        fine_grid_size = self.grid_size - 2
+        coarse_grid_size = (fine_grid_size - 1) // 2
+
+        interpolation_scheme = np.array([0.5, 1.0, 0.5])
+
+        for _ in range(self.multigrid_levels - 1):
+            curr_p_matrix = np.zeros((fine_grid_size, coarse_grid_size), dtype=float)
+            for j in range(coarse_grid_size):
+                curr_p_matrix[2 * j:2 * j + 3, j] = interpolation_scheme
+
+            curr_p_matrix = spp.csr_matrix(curr_p_matrix)
+
+            curr_r_matrix = curr_p_matrix.transpose() * 0.5
+
+            self.p_matrix.append(curr_p_matrix)
+            self.r_matrix.append(curr_r_matrix)
+
+            fine_grid_size = coarse_grid_size
+            coarse_grid_size = (fine_grid_size - 1) // 2
