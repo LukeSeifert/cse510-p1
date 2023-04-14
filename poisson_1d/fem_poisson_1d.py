@@ -47,40 +47,48 @@ class FiniteElementPoisson1D:
         )
 
         if self.basis_func_type == "linear":
-            self.rhs = np.zeros(self.num_element + 1)
             for i in range(self.num_element):
-                self.rhs[i: i + 2] += self.basis.compute_inner_product(offset=i * self.hx)
+                self.rhs_field[i: i + 2] += self.basis.compute_inner_product(offset=i * self.hx)
 
             if self.left_boundary_type == "Dirichlet":
-                self.rhs[1] += self.left_boundary_value
+                self.rhs_field[1] += self.left_boundary_value
 
             if self.right_boundary_type == "Dirichlet":
-                self.rhs[-2] += self.right_boundary_value
+                self.rhs_field[-2] += self.right_boundary_value
 
         if self.basis_func_type == "quadratic":
-            self.rhs = np.zeros(2 * self.num_element + 1)
             for i in range(self.num_element):
-                self.rhs[2 * i: 2 * i + 3] += self.basis.compute_inner_product(offset=i * self.hx)
+                self.rhs_field[2 * i: 2 * i + 3] += self.basis.compute_inner_product(offset=i * self.hx)
 
             if self.left_boundary_type == "Dirichlet":
-                self.rhs[1] += self.left_boundary_value * 8.0 / 3.0 / self.hx
+                self.rhs_field[1] += self.left_boundary_value * 8.0 / 3.0 / self.hx
 
             if self.right_boundary_type == "Dirichlet":
-                self.rhs[-2] += self.right_boundary_value * 8.0 / 3.0 / self.hx
+                self.rhs_field[-2] += self.right_boundary_value * 8.0 / 3.0 / self.hx
 
         if self.left_boundary_type == "Neumann":
-            self.rhs[0] -= self.left_boundary_value
+            self.rhs_field[0] -= self.left_boundary_value
 
         if self.right_boundary_type == "Neumann":
-            self.rhs[-1] += self.right_boundary_value
+            self.rhs_field[-1] += self.right_boundary_value
 
     def _initialize_fields(self):
-        self.domain_x = np.linspace(
-            0.0, self.domain_size, self.num_element + 1
-        )
-        self.end_index = {"left": 0, "right": None}
-        self.soln_field = np.zeros_like(self.domain_x)
+        self.num_iter = 0
         self.dirichlet_boundary_count = 0
+        self.end_index = {"left": 0, "right": None}
+
+        if self.basis_func_type == "linear":
+            self.domain_x = np.linspace(
+                0.0, self.domain_size, self.num_element + 1
+            )
+        else:
+            self.domain_x = np.linspace(
+                0.0, self.domain_size, 2 * self.num_element + 1
+            )
+
+        self.soln_field = np.zeros_like(self.domain_x)
+        self.rhs_field = np.zeros_like(self.domain_x)
+        self.res_field = np.zeros_like(self.domain_x)
 
         if self.left_boundary_type == "Dirichlet":
             self.soln_field[0] = self.left_boundary_value
@@ -134,21 +142,19 @@ class FiniteElementPoisson1D:
             )
 
     def _initialize_iterative_solver(self):
-        self.iter_solver = IterativeLinSolve(
+        self._iter_solver = IterativeLinSolve(
             matrix=self.stiffness_matrix,
             solve_type=self.kwargs.get("solve_type", "w-jacobi"),
             weight=self.kwargs.get("weight", 1.0),
-            rhs=self.rhs[self.end_index["left"]:self.end_index["right"]]
+            rhs=self.rhs_field[self.end_index["left"]:self.end_index["right"]]
         )
 
     def solve(self, tol: float = 1e-3, max_iter: int = 1e6):
-        result = self.iter_solver.solve(tol=tol, max_iter=max_iter)
-        if self.basis_func_type == "linear":
-            self.soln_field[self.end_index["left"]:self.end_index["right"]] = result
-        else:
-            temp_soln_field = np.zeros(2 * self.num_element + 1)
-            temp_soln_field[self.end_index["left"]:self.end_index["right"]] = result
-            self.soln_field[...] = temp_soln_field[::2]
+        result, total_iter = self._iter_solver.solve(tol=tol, max_iter=max_iter)
+        self.num_iter += total_iter
+
+        self.soln_field[self.end_index["left"]:self.end_index["right"]] = result
+        self.res_field[self.end_index["left"]:self.end_index["right"]] = self._iter_solver.res.copy()
 
         return self.soln_field
 

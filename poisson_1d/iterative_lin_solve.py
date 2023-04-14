@@ -85,7 +85,7 @@ class IterativeLinSolve:
             f"Final residual: {scalar_res}\n"
             "===== Iterative solve ends =====\n"
         )
-        return self.soln.copy()
+        return self.soln.copy(), num_iter
 
     def do_step(self):
         """
