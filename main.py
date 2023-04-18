@@ -96,9 +96,9 @@ def compare_solvers(u, error, sub_solver, V, a, L, bcs, exact):
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
     # RTOL
-    name = 'CG Solve'
-    parameters = {"ksp_type": "cg", "pc_type": "none", 'mat_type': 'mat_free', 'ksp_monitor': None}
-    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
+    #name = 'CG Solve'
+    #parameters = {"ksp_type": "cg", "pc_type": "none", 'mat_type': 'mat_free', 'ksp_monitor': None}
+    #times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
     if MG_solvers:
         # ITS
@@ -284,15 +284,40 @@ def plot_gens(times, cells, errs, iters, subplotter, image_dir):
 
 if __name__ == '__main__':
     initial_start = time.time()
-    CG_solvers = True
-    MG_solvers = False
-    depth = 1
+    CG_solvers = False
+    MG_solvers = True
+    depth = 4
     family = 'Lagrange' #CG
     degree_FEM = 1
-    max_time_s = 10
-    image_dir = f'./images-d{depth}-f{family}-r{degree_FEM}-t{max_time_s}-CG{CG_solvers}-MG{MG_solvers}'
-    if not os.path.exists(image_dir):
-        os.makedirs(image_dir)
+    max_time_s = 60
+
+
+    depth_list = [1, 2, 4]
+    CG_solver_list = [False, True]
+    for CG_solvers in CG_solver_list:
+        if not CG_solvers:
+            MG_solvers = True
+        elif CG_solvers:
+            MG_solvers = False
+
+        for depth in depth_list:
+
+            image_dir = f'./full-run/images-d{depth}-f{family}-r{degree_FEM}-t{max_time_s}-CG{CG_solvers}-MG{MG_solvers}'
+            if not os.path.exists(image_dir):
+                os.makedirs(image_dir)
+
+            # Compare non-MG with MG
+            times, cells, errs, iters = convergence(compare_solvers, error, max_time_s, depth, family, degree_FEM, sub_solver)
+            plot_gens(times, cells, errs, iters, subplotter, image_dir)
+
+
+            net_time = time.time() - initial_start
+            print(f'Total Time: {net_time}s')
+            print('MODIFIED SUB-SOLVER')
+
+    #image_dir = f'./images-d{depth}-f{family}-r{degree_FEM}-t{max_time_s}-CG{CG_solvers}-MG{MG_solvers}'
+    #if not os.path.exists(image_dir):
+    #    os.makedirs(image_dir)
     
     #mesh_list = [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
     # 20 is a good value for speed and good results
@@ -300,8 +325,13 @@ if __name__ == '__main__':
     # Current setup uses 1e-7 constant rtol
 
     # Compare non-MG with MG
-    times, cells, errs, iters = convergence(compare_solvers, error, max_time_s, depth, family, degree_FEM, sub_solver)
-    plot_gens(times, cells, errs, iters, subplotter, image_dir)
+    #times, cells, errs, iters = convergence(compare_solvers, error, max_time_s, depth, family, degree_FEM, sub_solver)
+    #plot_gens(times, cells, errs, iters, subplotter, image_dir)
+
+
+    net_time = time.time() - initial_start
+    print(f'Total Time: {net_time}s')
+
 
 ##    fig, axes = plt.subplots()
 ##    triplot(mesh, axes=axes)
@@ -313,7 +343,3 @@ if __name__ == '__main__':
 ##    axes.legend();
 ##    plt.savefig('check_mesh_fine.png')
 ##    plt.close()
-
-    net_time = time.time() - initial_start
-    print(f'Total Time: {net_time}s')
-    print('MODIFIED SUB-SOLVER')
