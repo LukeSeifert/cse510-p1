@@ -63,13 +63,13 @@ def sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, i
 
 
 
-    print(f'{name} error ', err)
-    print(f'Cells: {cells}\nIterations: {iters}')
+    #print(f'{name} error ', err)
+    #print(f'Cells: {cells}\nIterations: {iters}')
     # CONVERGED_ITS means 1 iter of preconditioner applied
     # https://w3.pppl.gov/m3d/petsc-dev/docs/manualpages/KSP/KSP_CONVERGED_ITS.html#KSP_CONVERGED_ITS
     #print(f'Reason: {KSPReasons[solver.snes.ksp.getConvergedReason()]}')
-    print(f'Took {net_time}s')
-    print('-'*10)
+    #print(f'Took {net_time}s')
+    #print('-'*10)
     times[name] = net_time
     iterations[name] = iters
     errors[name] = err
@@ -95,10 +95,10 @@ def compare_solvers(u, error, sub_solver, V, a, L, bcs, exact):
     parameters = {"ksp_type": "preonly", "pc_type": "lu"}
     times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
-    ## RTOL
-    #name = 'CG Solve'
-    #parameters = {"ksp_type": "cg", "pc_type": "none", 'mat_type': 'mat_free', 'ksp_monitor': None}
-    #times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
+    # RTOL
+    name = 'CG Solve'
+    parameters = {"ksp_type": "cg", "pc_type": "none", 'mat_type': 'mat_free', 'ksp_monitor': None}
+    times, iterations, errors, cell_count = sub_solver(name, parameters, linear_var_solve, V, a, L, bcs, error, times, iterations, errors, cell_count, exact)
 
     if MG_solvers:
         # ITS
@@ -165,19 +165,25 @@ def compare_solvers(u, error, sub_solver, V, a, L, bcs, exact):
 
     return times, iterations, errors, cell_count
 
-def convergence(compare_solvers, error, mesh_list, depth, family, degree_FEM, sub_solver):
+def convergence(compare_solvers, error, max_time_s, depth, family, degree_FEM, sub_solver):
     full_time_dict = dict()
     full_cell_dict = dict()
     full_err_dict = dict()
     full_iter_dict = dict()
-    for mindex, mesh in enumerate(mesh_list):
-        xmesh = mesh
-        ymesh = mesh
+    time_cost_s = 0
+    gridding = 0
+    while time_cost_s <= max_time_s:
+        t_0 = time.time()
+        gridding += 1
+        xmesh = gridding
+        ymesh = gridding
         mesh = UnitSquareMesh(xmesh, ymesh)
         hierarchy = MeshHierarchy(mesh, depth)
 
 
         mesh = hierarchy[-1] # Grab the finest mesh
+        num_elements = mesh.num_cells()
+        print(num_elements)
         V = FunctionSpace(mesh, family, degree=degree_FEM)
         u = TrialFunction(V)
         v = TestFunction(V)
@@ -192,8 +198,8 @@ def convergence(compare_solvers, error, mesh_list, depth, family, degree_FEM, su
         L = f * v * dx
 
         times, iterations, errors, cell_count = compare_solvers(u, error, sub_solver, V=V, a=a, L=L, bcs=bcs, exact=exact)
-        for name in times.keys():
-            if mindex == 0:
+        for name in times.keys(): 
+            if gridding == 1:
                 full_time_dict[name] = [times[name]]
                 full_cell_dict[name] = [cell_count[name]]
                 full_err_dict[name] = [errors[name]]
@@ -203,6 +209,8 @@ def convergence(compare_solvers, error, mesh_list, depth, family, degree_FEM, su
                 full_cell_dict[name].append(cell_count[name])
                 full_err_dict[name].append(errors[name])
                 full_iter_dict[name].append(iterations[name])
+        time_cost_s = time.time() - t_0
+        print(f'Time: {round(time_cost_s, 3)}s')
     return full_time_dict, full_cell_dict, full_err_dict, full_iter_dict
 
 
@@ -276,34 +284,24 @@ def plot_gens(times, cells, errs, iters, subplotter, image_dir):
 
 if __name__ == '__main__':
     initial_start = time.time()
-    run_type = 'mg-nmg'
     CG_solvers = True
     MG_solvers = False
-    depth = 4
+    depth = 1
     family = 'Lagrange' #CG
     degree_FEM = 1
-    min_mesh = 1
-    max_mesh = 50
-    image_dir = f'./images-d{depth}-f{family}-r{degree_FEM}-m{max_mesh}'
+    max_time_s = 10
+    image_dir = f'./images-d{depth}-f{family}-r{degree_FEM}-t{max_time_s}-CG{CG_solvers}-MG{MG_solvers}'
     if not os.path.exists(image_dir):
         os.makedirs(image_dir)
     
-    mesh_list = np.arange(min_mesh, max_mesh)
     #mesh_list = [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
     # 20 is a good value for speed and good results
 
     # Current setup uses 1e-7 constant rtol
 
-    if run_type == 'mg-nmg':
-        # Compare non-MG with MG
-        times, cells, errs, iters = convergence(compare_solvers, error, mesh_list, depth, family, degree_FEM, sub_solver)
-        plot_gens(times, cells, errs, iters, subplotter, image_dir)
-    elif run_type == 'mg-mg':
-        # Compare MG against MG 
-        times, cells, errs, iters = convergence(compare_MG_solvers, error, mesh_list, depth, family, degree_FEM, sub_solver_MG)
-        plot_gens(times, cells, errs, iters, subplotter, image_dir)
-    else:
-        raise Exception
+    # Compare non-MG with MG
+    times, cells, errs, iters = convergence(compare_solvers, error, max_time_s, depth, family, degree_FEM, sub_solver)
+    plot_gens(times, cells, errs, iters, subplotter, image_dir)
 
 ##    fig, axes = plt.subplots()
 ##    triplot(mesh, axes=axes)
