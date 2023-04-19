@@ -30,8 +30,6 @@ class IterativeLinSolve:
         self.verbose = kwargs.get("verbose", True)
         self.save_res = kwargs.get("save_res", False)
 
-        self._initialize_solver()
-
         temp_rhs = kwargs.get("rhs", None)
         temp_initial_x = kwargs.get("phi_init", None)
 
@@ -39,6 +37,8 @@ class IterativeLinSolve:
             self.set_rhs(set_rhs=temp_rhs)
         if temp_initial_x is not None:
             self.modify_soln_field(set_soln=temp_initial_x)
+
+        self._initialize_solver()
 
     def _initialize_solver(self):
         weight = self.kwargs.get("weight", 1.0)
@@ -71,7 +71,10 @@ class IterativeLinSolve:
             strict_lower_trig = spp.tril(self.matrix, k=-1)
             self.scaling_mat = sla.inv(diagonal / weight + strict_lower_trig)
 
-    def solve(self, tol=1e-3, max_iter=1e6):
+        self._compute_vector_residual()
+        self._compute_scalar_residual()
+
+    def solve(self, tol=1e-5, max_iter=1e6):
         """ Solve linear system Ax = f """
         if self.verbose:
             print("===== Start iterative solve =====")
@@ -80,21 +83,22 @@ class IterativeLinSolve:
 
         res_history = []
         iterations = []
-        scalar_res = tol + 1.0
-        num_iter = 0
+        num_iter = 1
+        self._compute_vector_residual()
+        self._compute_scalar_residual()
 
-        while num_iter < max_iter and scalar_res > tol:
-            scalar_res = self.do_step()
-            num_iter += 1
-
-            if num_iter % 50 == 0 and self.save_res:
+        while num_iter < max_iter and self.scalar_res > tol:
+            if num_iter % 50 == 1 and self.save_res:
                 iterations.append(num_iter)
-                res_history.append(scalar_res)
+                res_history.append(self.scalar_res)
+
+            self._do_step()
+            num_iter += 1
 
         if self.verbose:
             print(
                 f"Total number of iteration: {num_iter}\n"
-                f"Final residual: {scalar_res}\n"
+                f"Final residual: {self.scalar_res}\n"
                 "===== Iterative solve ends =====\n"
             )
 
@@ -106,30 +110,29 @@ class IterativeLinSolve:
         return {
             "soln": self.soln.copy(),
             "num_iter": num_iter,
-            "residual": scalar_res,
+            "residual": self.scalar_res,
             "flops": num_iter * 4 * self.dim ** 2,
         }
 
-    def do_step(self):
+    def _do_step(self):
         """
         Do one step of fixed-point iteration
         x = x + M (f - Ax)
         """
-        self.compute_vector_residual()
+        self._compute_vector_residual()
         self.soln[...] += self.scaling_mat @ self.res
+        self._compute_scalar_residual()
 
-        return self.compute_scalar_residual()
-
-    def compute_vector_residual(self):
+    def _compute_vector_residual(self):
         """ Compute r = f - Ax """
         self.res[...] = self.rhs - self.matrix @ self.soln
 
-    def compute_scalar_residual(self):
+    def _compute_scalar_residual(self):
         """
         Compute norm of residual in 1D
         |r| = sqrt(sum(r ** 2) * dx / l) = sqrt(sum(r ** 2) / n)
         """
-        return np.sqrt(np.sum(self.res ** 2) / self.dim)
+        self.scalar_res = np.sqrt(np.sum(self.res ** 2) / self.dim)
 
     def modify_soln_field(self, set_soln):
         if type(set_soln) == np.ndarray:

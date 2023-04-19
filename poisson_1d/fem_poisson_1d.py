@@ -72,7 +72,7 @@ class FiniteElementPoisson1D:
             self.rhs_field[-1] += self.right_boundary_value
 
     def _initialize_fields(self):
-        self.num_iter = 0
+        self.num_iter = 1
         self.flops = 0
         self.dirichlet_boundary_count = 0
         self.end_index = {"left": 0, "right": None}
@@ -149,7 +149,7 @@ class FiniteElementPoisson1D:
             **self.kwargs
         )
 
-    def solve(self, tol: float = 1e-3, max_iter: int = 1e6):
+    def solve(self, tol: float = 1e-5, max_iter: int = 1e6):
         result = self._iter_solver.solve(tol=tol, max_iter=max_iter)
         self.num_iter += result["num_iter"]
         self.flops += result["flops"]
@@ -159,8 +159,8 @@ class FiniteElementPoisson1D:
 
         return {
             "soln": self.soln_field.copy(),
-            "num_iter": self.num_iter,
-            "residual": result["residual"],
+            "num_iter": result["num_iter"],
+            "residual": self._iter_solver.scalar_res,
             "flops": self.flops,
         }
 

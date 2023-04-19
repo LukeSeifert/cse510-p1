@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.sparse as spp
+import scipy.sparse.linalg as sla
 from typing import Literal, Callable
 
 from fem_poisson_1d import FiniteElementPoisson1D
@@ -31,7 +32,7 @@ class MultigridFEMPoisson1D:
         self.left_bc, self.right_bc = boundary_conditions
         self.left_bv, self.right_bv = boundary_values
         self.kwargs = kwargs
-        self.num_iter = 0
+        self.num_iter = 1
         self.flops = 0
 
         if self.basis_func_type == "linear":
@@ -84,6 +85,7 @@ class MultigridFEMPoisson1D:
                         **self.kwargs,
                     )
                 )
+                self.iterative_solvers[i].save_res = False
 
             curr_grid_size = (curr_grid_size - 1) // 2
 
@@ -100,7 +102,7 @@ class MultigridFEMPoisson1D:
             residual_history = []
 
             tol *= np.amax(np.abs(self.root_solver.rhs_field))
-            res = tol + 1.0
+            res = np.sqrt(np.sum(self.root_solver.rhs_field ** 2) / self.grid_size)
 
             while res > tol:
                 if save_res:
@@ -109,6 +111,8 @@ class MultigridFEMPoisson1D:
                 res = self._solve(level=0, max_iter=max_iter, tol=tol)
 
             if save_res:
+                iterations.append(self.root_solver.num_iter)
+                residual_history.append(res)
                 to_save = np.vstack((np.array(iterations), np.array(residual_history))).T
                 np.savetxt(res_file_name, to_save, delimiter=",")
 
@@ -116,10 +120,16 @@ class MultigridFEMPoisson1D:
 
     def _solve(self, level, max_iter, tol):
         if level == self.multigrid_levels - 1:
-            result = self.iterative_solvers[level].solve(tol=tol, max_iter=int(1e6))
-            self.num_iter += result["num_iter"]
-            self.flops += result["flops"]
-            return result["residual"]
+            # result = self.iterative_solvers[level].solve(tol=tol, max_iter=int(1e6))
+            # self.num_iter += result["num_iter"]
+            # self.flops += result["flops"]
+            # return result["residual"]
+            self.iterative_solvers[level].soln[...] = sla.spsolve(
+                self.iterative_solvers[level].matrix,
+                self.iterative_solvers[level].rhs
+            )
+
+            return 0.0
 
         # Pre-smoothing
         result = self.iterative_solvers[level].solve(max_iter=max_iter)

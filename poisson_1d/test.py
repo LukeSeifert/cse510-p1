@@ -3,27 +3,12 @@ import matplotlib.pyplot as plt
 
 from fem_poisson_1d import FiniteElementPoisson1D
 from multigrid_fem_poisson_1d import MultigridFEMPoisson1D
-
-
-def lap_superimposed_sine(x, modes: list[float]):
-    func_vals = np.zeros_like(x)
-    for k in modes:
-        func_vals += (2.0 * np.pi * k) ** 2 * np.sin(2.0 * np.pi * k * x)
-
-    return func_vals
-
-
-def superimposed_sine(x, modes: list[float]):
-    func_vals = np.zeros_like(x)
-    for k in modes:
-        func_vals += np.sin(2.0 * np.pi * k * x)
-
-    return func_vals
+from utils import superimposed_sine, lap_superimposed_sine
 
 
 def plot_convergence(axis, file_name):
     data = np.loadtxt(file_name, delimiter=",")
-    curr_plot, = axis.semilogx(data[:, 0], data[:, 1])
+    curr_plot, = axis.loglog(data[:, 0], data[:, 1], "-x")
     return curr_plot
 
 
@@ -107,28 +92,29 @@ if __name__ == "__main__":
     #     weight=0.8,
     # )
 
-    grid_depth = 2
-    res_file_name = f"data/multigrid_{grid_depth}_n_128_gs_linear.txt"
+    grid_depth = 3
+    num_element = 256
+    basis_func_type = "linear"
+    res_file_name = f"data/multigrid_{grid_depth}_n_{num_element}_gs_" + basis_func_type + ".txt"
     num_iter, flops = run_multigrid_fem_with_sine_forcing(
         multigrid_levels=grid_depth,
-        num_element=256,
+        num_element=num_element,
         modes=sine_modes,
         domain_size=1.0,
         boundary_values=(0.0, 0.0),
-        basis_func_type="quadratic",
+        basis_func_type=basis_func_type,
         solve_type="gauss-seidel",
-        weight=0.7,
-        plot_figure=True,
-        save_res=False,
+        weight=0.5,
+        plot_figure=False,
+        save_res=True,
         res_file_name=res_file_name,
         verbose=False,
     )
     print(f"Total number of iterations is {num_iter}")
-    print(f"Total numer of floating point opes is {flops:.2E}")
+    print(f"Total numer of floating point ops is {flops:.2E}")
     # fig, ax = plt.subplots()
-    # g1 = plot_convergence(ax, "data/multigrid_1_n_128_gs_linear.txt")
-    # g1.set_label("Grid depth 1")
-    # g2 = plot_convergence(ax, "data/multigrid_2_n_128_gs_linear.txt")
-    # g2.set_label("Grid depth 2")
+    # for i in range(4):
+    #     g = plot_convergence(ax, f"data/multigrid_{i + 1}_n_256_gs_linear.txt")
+    #     g.set_label(f"Multigrid levels = {i + 1}")
     # ax.legend()
     # plt.show()
