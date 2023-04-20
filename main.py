@@ -289,7 +289,7 @@ if __name__ == '__main__':
     depth = 4
     family = 'Lagrange' #CG
     degree_FEM = 1
-    max_time_s = 60
+    max_time_s = 30
 
 
     depth_list = [1, 2, 4]
